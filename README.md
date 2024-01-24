@@ -61,3 +61,20 @@ In other words: the only _absolutely_ way to find our which nameservers a partic
 # Credits
 
 This code is initially based on the [check-soa](https://github.com/miekg/exdns/tree/master/check-soa) script by [miekg](https://github.com/miekg).
+
+```
+zone-nameservers
+
+```
+```
+zone-nameservers
+
+```
+```
+zone-nameservers
+
+```
+```
+zone-nameservers
+
+```

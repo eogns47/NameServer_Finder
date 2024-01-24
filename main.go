@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	ioview "github.com/DNSSpy/zone-nameservers/IOView"
+
 	"github.com/miekg/dns"
 	"github.com/oschwald/geoip2-golang"
 )
@@ -166,12 +168,38 @@ func getCountryCode(ip string) (string, error) {
 	return strings.ToLower(record.Country.IsoCode), nil
 }
 
+func validIPIncludes(nameserverIPs []string, ipAddresses []string, targetIP string) int {
+	for _, ip := range nameserverIPs {
+		if ip == targetIP {
+			return 1
+		}
+	}
+	for _, ip := range ipAddresses {
+		if ip == targetIP {
+			return 2
+		}
+	}
+	return 0
+}
+
 
 func main() {
 	if len(os.Args) != 2 {
 		log.Fatalf("%s ZONE\n", os.Args[0])
 	}
-	domain := dns.Fqdn(os.Args[1])
+
+	target :=os.Args[1]
+	records,err :=ioview.ReadCsv(target)
+
+	if err != nil {
+		fmt.Println("🚨Error Input csv:", err)
+		return
+	}
+
+	for _, record := range records {
+	fmt.Println("-----------------------------------------------------------------------------------------------------------------")
+
+	domain := dns.Fqdn(record[0])
 	domain = removeHTTPPrefix(domain)
 
 	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
@@ -258,5 +286,15 @@ func main() {
 			return
 		}
 		fmt.Println(ip, countryCode)
+	}
+
+	ipBelong :=validIPIncludes(nameserverIPs, ipAddresses, record[2])
+
+	fmt.Println("Guess IP:" ,record[2])
+	fmt.Println("IP Belong:",ipBelong)
+
+
+	fmt.Println("-----------------------------------------------------------------------------------------------------------------")
+
 	}
 }
