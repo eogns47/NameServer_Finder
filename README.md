@@ -48,7 +48,7 @@ Finding nameservers for zone 'dnsspy.io.' using parent nameserver 'ns-a3.io.'
  - ns2.nucleus.be.
  - ns3.nucleus.be.
  - ns4.nucleus.be.
- ```
+```
 
 The arrow represents which nameserver from the parent was used to query for details of the child zone.
 
@@ -60,21 +60,4 @@ In other words: the only _absolutely_ way to find our which nameservers a partic
 
 # Credits
 
-This code is initially based on the [check-soa](https://github.com/miekg/exdns/tree/master/check-soa) script by [miekg](https://github.com/miekg).
-
-```
-zone-nameservers
-
-```
-```
-zone-nameservers
-
-```
-```
-zone-nameservers
-
-```
-```
-zone-nameservers
-
-```
+This code is initially based on the [check-soa](https://github.com/miekg/exdns/tree/master/check-soa) script by [miekg](https://github.com/miekg)
