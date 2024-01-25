@@ -310,12 +310,6 @@ func main() {
 			ioview.InsertWebIPDataIntoTable(db, ioview.WebIpData{SearchID: searchId, IP: ip, CountryCode: countryCode})
 		}
 
-		ipBelong := validIPIncludes(nameserverIPs, ipAddresses, record[2])
-
-		fmt.Println("\nGuess IP:", record[2])
-		fmt.Println("IP Belong:", ipBelong)
-
-		fmt.Println("-----------------------------------------------------------------------------------------------------------------")
 	}
 
 }
