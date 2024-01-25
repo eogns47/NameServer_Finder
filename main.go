@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,7 +77,6 @@ func (zr *ZoneNsResolver) localQuery(qname string, qtype uint16, server string) 
 
 	r, _, err := zr.localc.Exchange(zr.localm, server+":53")
 	if err != nil {
-		fmt.Println("here~!!", err)
 		return nil, err
 	}
 	if r == nil || r.Rcode == dns.RcodeNameError || r.Rcode == dns.RcodeSuccess {
@@ -180,6 +180,19 @@ func validIPIncludes(nameserverIPs []string, ipAddresses []string, targetIP stri
 	return 0
 }
 
+func isIPv4orIPv6(ipStr string) int {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return 0
+	} else if ip.To16() != nil && ip.To4() == nil {
+		return 6
+	} else if ip.To4() != nil {
+		return 4
+	} else {
+		return 0
+	}
+}
+
 func main() {
 
 	if len(os.Args) != 2 {
@@ -194,18 +207,30 @@ func main() {
 		return
 	}
 
+	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
+	if err != nil || conf == nil {
+		log.Fatalf("Cannot initialize the local resolver: %s\n", err)
+	}
+
+	resolver := NewZoneNsResolver()
+	db := ioview.GetDBConnect()
+
 	for _, record := range records {
+		urlcrc, err := strconv.Atoi(record[1])
+		if err != nil {
+			fmt.Printf("URL %s Dont have CRC \n", record)
+			continue
+		}
+		searchId, err := ioview.InsertURLSearchDataIntoTable(db, ioview.URLSearchData{URL: record[0], URLCRC: int64(urlcrc)})
+		if err != nil {
+			fmt.Println("Error:", err)
+			return
+		}
+
 		fmt.Println("-----------------------------------------------------------------------------------------------------------------")
 
 		domain := dns.Fqdn(record[0])
 		domain = removeHTTPPrefix(domain)
-
-		conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
-		if err != nil || conf == nil {
-			log.Fatalf("Cannot initialize the local resolver: %s\n", err)
-		}
-
-		resolver := NewZoneNsResolver()
 
 		var ns []string
 		nextNs := conf.Servers[0]
@@ -222,22 +247,12 @@ func main() {
 
 			ns, err = resolver.Resolve(zone, nextNs)
 			if err != nil {
-				log.Fatalln("🚨Query failed: ", err)
-
+				fmt.Println("🚨Query failed: ", err)
+				break
 			}
 
 			// Pick a random NS record for the next queries
 			nextNs = ns[rand.Intn(len(ns))]
-
-			// Print the nameservers for this zone, highlight the one we used to query
-			for _, nameserver := range ns {
-				if nameserver == nextNs && domain != zone {
-					// We'll use this one for queries
-					// fmt.Println(" ➡️ " + nameserver)
-				} else {
-					// fmt.Println(" - " + nameserver)
-				}
-			}
 		}
 
 		fmt.Println("📜nameserver List:")
@@ -253,6 +268,17 @@ func main() {
 				continue
 			}
 			nameserverIPs = append(nameserverIPs, IPs...)
+
+			for _, ip := range IPs {
+				countryCode, err := getCountryCode(ip)
+				if err != nil {
+					fmt.Println("Error:", err)
+					continue
+				}
+				ipType := isIPv4orIPv6(ip)
+				ioview.InsertNameServerDataIntoTable(db, ioview.NameServerData{SearchID: searchId, NameServer: nameserver, IP: ip, CountryCode: countryCode, IPType: ipType})
+			}
+
 		}
 
 		// getIPAddresses 함수를 사용하여 URL에 대한 IP 주소 조회
@@ -281,14 +307,15 @@ func main() {
 				return
 			}
 			fmt.Println(ip, countryCode)
+			ioview.InsertWebIPDataIntoTable(db, ioview.WebIpData{SearchID: searchId, IP: ip, CountryCode: countryCode})
 		}
 
 		ipBelong := validIPIncludes(nameserverIPs, ipAddresses, record[2])
 
-		fmt.Println("Guess IP:", record[2])
+		fmt.Println("\nGuess IP:", record[2])
 		fmt.Println("IP Belong:", ipBelong)
 
 		fmt.Println("-----------------------------------------------------------------------------------------------------------------")
-
 	}
+
 }

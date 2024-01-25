@@ -4,6 +4,7 @@ go 1.21.5
 
 require (
 	github.com/go-sql-driver/mysql v1.7.1 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/miekg/dns v1.1.58 // indirect
 	github.com/oschwald/geoip2-golang v1.9.0 // indirect
 	github.com/oschwald/maxminddb-golang v1.12.0 // indirect
