@@ -6,6 +6,16 @@ Walk the DNS tree to find which name servers a particular zone uses. Mimics "dig
 
 After a git clone;
 
+make file : Config/dbConfig.env
+
+```
+$ touch Config/dbConfig.env
+$ vi Config/dbConfig.env
+// Write your database config
+```
+
+build & execute
+
 ```
 $ go build
 $ ./NameServer_Finder {csvfile name}
