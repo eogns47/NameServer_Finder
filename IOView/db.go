@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/pkg/errors"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -42,7 +43,7 @@ type URLSearchData struct {
 func GetConnector() (*sql.DB, error) {
 	err := godotenv.Load("./Config/dbConfig.env")
 	if err != nil {
-		return nil, fmt.Errorf("Error loading DB config file: %v", err)
+		return nil, errors.Wrap(err, "Error loading DB config file: "+err.Error())
 	}
 	cfg := mysql.Config{
 		User:                 os.Getenv("DB_USER"),
@@ -58,7 +59,7 @@ func GetConnector() (*sql.DB, error) {
 	}
 	connector, err := mysql.NewConnector(&cfg)
 	if err != nil {
-		panic(err)
+		return nil, errors.Wrap(err, "mysql.NewConnector failed")
 	}
 	db := sql.OpenDB(connector)
 	return db, err
@@ -109,7 +110,7 @@ func CreateNameServerTableIfNotExists(db *sql.DB) error {
 	// 테이블 생성
 	_, err := db.Exec(createTableQuery)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "CreateNameServerTableQuery failed")
 	}
 
 	fmt.Printf("Table tb_name_server created successfully.\n")
@@ -132,7 +133,7 @@ func CreateWEbIpTableIfNotExists(db *sql.DB) error {
 	// 테이블 생성
 	_, err := db.Exec(createTableQuery)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "CreateWEbIpTableQuery failed")
 	}
 
 	fmt.Printf("Table tb_web_ip created successfully.\n")
@@ -155,7 +156,7 @@ func CreateUrlSearchTableIfNotExists(db *sql.DB) error {
 	// 테이블 생성
 	_, err := db.Exec(createTableQuery)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "CreateUrlSearchTableQuery failed")
 	}
 
 	fmt.Printf("Table tb_url_search created successfully.\n")
@@ -171,12 +172,12 @@ func InsertURLSearchDataIntoTable(db *sql.DB, data URLSearchData) (int, error) {
 	// 데이터 삽입
 	result, err := db.Exec(insertQuery, data.URL, data.URLCRC)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "Insert URLSearchData failed")
 	}
 
 	lastInsertID, err := result.LastInsertId()
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "LastInsertId failed")
 	}
 
 	return int(lastInsertID), nil
@@ -191,7 +192,7 @@ func InsertWebIPDataIntoTable(db *sql.DB, data WebIpData) error {
 	// 데이터 삽입
 	_, err := db.Exec(insertQuery, data.SearchID, data.IP, data.CountryCode)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Insert WebIpData failed")
 	}
 
 	return nil
@@ -206,21 +207,21 @@ func InsertNameServerDataIntoTable(db *sql.DB, data NameServerData) error {
 	// 데이터 삽입
 	_, err := db.Exec(insertQuery, data.SearchID, data.NameServer, data.IP, data.CountryCode, data.IPType)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Insert NameServerData failed")
 	}
 
 	return nil
 }
 
-func GetDBConnect() (db *sql.DB) {
+func GetDBConnect() (*sql.DB, error) {
 	db, err := GetConnector()
 	if err != nil {
-		panic(err)
+		return nil, errors.Wrap(err, "GetConnector failed")
 	}
 
 	err = CreateTablesIfNotExists(db)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return db
+	return db, nil
 }

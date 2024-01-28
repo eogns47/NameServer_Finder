@@ -3,7 +3,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/oschwald/geoip2-golang"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -77,13 +77,13 @@ func (zr *ZoneNsResolver) localQuery(qname string, qtype uint16, server string) 
 
 	r, _, err := zr.localc.Exchange(zr.localm, server+":53")
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "localc Exchange failed")
 	}
 	if r == nil || r.Rcode == dns.RcodeNameError || r.Rcode == dns.RcodeSuccess {
 		return r, nil
 	}
 
-	return nil, errors.New("No name server to answer the question")
+	return nil, errors.Wrap(err, "No name server to answer the question")
 }
 
 func (zr *ZoneNsResolver) Resolve(zone string, server string) ([]string, error) {
@@ -91,7 +91,7 @@ func (zr *ZoneNsResolver) Resolve(zone string, server string) ([]string, error) 
 
 	r, err := zr.localQuery(zone, dns.TypeNS, server)
 	if err != nil || r == nil {
-		return nil, err
+		return nil, errors.Wrap(err, "localQuery failed")
 	}
 
 	var nameservers []string
@@ -115,7 +115,7 @@ func (zr *ZoneNsResolver) Resolve(zone string, server string) ([]string, error) 
 	}
 
 	if len(nameservers) == 0 {
-		return nil, errors.New("No nameservers found for " + zone)
+		return nil, errors.Wrap(err, "No nameservers found for "+zone)
 	}
 
 	sort.Strings(nameservers)
@@ -140,7 +140,7 @@ func getIPAddresses(url string) ([]string, error) {
 	// Using LookupHost to lookup IP addresses of domain
 	ips, err := net.LookupHost(url)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "LookupHost failed")
 	}
 
 	return ips, nil
@@ -149,35 +149,21 @@ func getIPAddresses(url string) ([]string, error) {
 func getCountryCode(ip string) (string, error) {
 	db, err := geoip2.Open("GeoLite2-Country.mmdb")
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "Open Geoip failed")
 	}
 	defer db.Close()
 
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
-		return "", fmt.Errorf("Invalid IP address: %s", ip)
+		return "", errors.Wrap(err, "Invalid IP address: "+ip)
 	}
 
 	record, err := db.Country(parsedIP)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "db.Country failed")
 	}
 
 	return strings.ToLower(record.Country.IsoCode), nil
-}
-
-func validIPIncludes(nameserverIPs []string, ipAddresses []string, targetIP string) int {
-	for _, ip := range nameserverIPs {
-		if ip == targetIP {
-			return 1
-		}
-	}
-	for _, ip := range ipAddresses {
-		if ip == targetIP {
-			return 2
-		}
-	}
-	return 0
 }
 
 func isIPv4orIPv6(ipStr string) int {
@@ -203,8 +189,7 @@ func main() {
 	records, err := ioview.ReadCsv(target)
 
 	if err != nil {
-		fmt.Println("🚨Error Input csv:", err)
-		return
+		log.Fatalf("🚨Error with Input csv:", err)
 	}
 
 	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
@@ -213,7 +198,10 @@ func main() {
 	}
 
 	resolver := NewZoneNsResolver()
-	db := ioview.GetDBConnect()
+	db, err := ioview.GetDBConnect()
+	if err != nil {
+		log.Fatalf("🚨Error with DB Connect:", err)
+	}
 
 	for _, record := range records {
 		urlcrc, err := strconv.Atoi(record[1])
@@ -256,7 +244,9 @@ func main() {
 		}
 
 		fmt.Println("📜nameserver List:")
-		fmt.Println(ns)
+		for _, nameserver := range ns {
+			fmt.Println(nameserver)
+		}
 
 		var nameserverIPs []string
 
@@ -264,7 +254,7 @@ func main() {
 			IPs, err := getIPAddresses(nameserver)
 			if err != nil {
 				// 오류 처리
-				fmt.Println("Error:", err)
+				fmt.Println("Error for Nameservers : ", nameserver, err)
 				continue
 			}
 			nameserverIPs = append(nameserverIPs, IPs...)
@@ -272,7 +262,7 @@ func main() {
 			for _, ip := range IPs {
 				countryCode, err := getCountryCode(ip)
 				if err != nil {
-					fmt.Println("Error:", err)
+					fmt.Println("Error for Nameserver ip: ", ip, err)
 					continue
 				}
 				ipType := isIPv4orIPv6(ip)
@@ -284,7 +274,7 @@ func main() {
 		// getIPAddresses 함수를 사용하여 URL에 대한 IP 주소 조회
 		ipAddresses, err := getIPAddresses(domain)
 		if err != nil {
-			fmt.Println("Error:", err)
+			fmt.Println("Error for URL's Ip: ", domain, err)
 			return
 		}
 
@@ -292,7 +282,7 @@ func main() {
 		for _, ip := range nameserverIPs {
 			countryCode, err := getCountryCode(ip)
 			if err != nil {
-				fmt.Println("Error:", err)
+				fmt.Println("Error for Nameserver's countrycode:", ip, err)
 				return
 			}
 			fmt.Println(ip, countryCode)
@@ -303,7 +293,7 @@ func main() {
 		for _, ip := range ipAddresses {
 			countryCode, err := getCountryCode(ip)
 			if err != nil {
-				fmt.Println("Error:", err)
+				fmt.Println("Error's for URL's ip:", ip, err)
 				return
 			}
 			fmt.Println(ip, countryCode)
