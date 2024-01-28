@@ -4,20 +4,21 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	ioview "github.com/eogns47/NameServer_Finder/IOView"
-
 	"github.com/miekg/dns"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -179,39 +180,74 @@ func isIPv4orIPv6(ipStr string) int {
 	}
 }
 
+func fileLogger(logFolder string) *zap.Logger {
+	// Check if the log folder exists, create it if not
+	if _, err := os.Stat(logFolder); os.IsNotExist(err) {
+		err := os.Mkdir(logFolder, 0755)
+		if err != nil {
+			panic(err)
+		}
+	}
+	filename := filepath.Join(logFolder, "log.log")
+
+	config := zap.NewProductionEncoderConfig()
+	config.EncodeTime = zapcore.ISO8601TimeEncoder
+	fileEncoder := zapcore.NewJSONEncoder(config)
+	consoleEncoder := zapcore.NewConsoleEncoder(config)
+	logFile, _ := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	writer := zapcore.AddSync(logFile)
+	defaultLogLevel := zapcore.DebugLevel
+	core := zapcore.NewTee(
+		zapcore.NewCore(fileEncoder, writer, defaultLogLevel),
+		zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), defaultLogLevel),
+	)
+
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+
+	return logger
+}
+
 func main() {
+	// initialize the rotator
+	currentDir, err := os.Getwd()
+	logFile := filepath.Join(currentDir, "/log")
+
+	logger := fileLogger(logFile)
 
 	if len(os.Args) != 2 {
-		log.Fatalf("%s ZONE\n", os.Args[0])
+		logger.Warn(os.Args[0] + "ZONE")
+		return
 	}
 
 	target := os.Args[1]
 	records, err := ioview.ReadCsv(target)
 
 	if err != nil {
-		log.Fatalf("🚨Error with Input csv:", err)
+		logger.Warn("🚨Error with Input csv:" + err.Error())
 	}
 
 	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 	if err != nil || conf == nil {
-		log.Fatalf("Cannot initialize the local resolver: %s\n", err)
+		logger.Warn("Cannot initialize the local resolver: %s\n" + err.Error())
 	}
 
 	resolver := NewZoneNsResolver()
 	db, err := ioview.GetDBConnect()
 	if err != nil {
-		log.Fatalf("🚨Error with DB Connect:", err)
+		logger.Warn("🚨Error with DB Connect:" + err.Error())
 	}
 
+	startTime := time.Now()
+	logger.Info("Start find NS of " + target)
 	for _, record := range records {
 		urlcrc, err := strconv.Atoi(record[1])
 		if err != nil {
-			fmt.Printf("URL %s Dont have CRC \n", record)
+			logger.Info("URL " + record[0] + " Dont have CRC")
 			continue
 		}
 		searchId, err := ioview.InsertURLSearchDataIntoTable(db, ioview.URLSearchData{URL: record[0], URLCRC: int64(urlcrc)})
 		if err != nil {
-			fmt.Println("Error:", err)
+			logger.Warn("Error:" + err.Error())
 			return
 		}
 
@@ -235,7 +271,7 @@ func main() {
 
 			ns, err = resolver.Resolve(zone, nextNs)
 			if err != nil {
-				fmt.Println("🚨Query failed: ", err)
+				logger.Warn("🚨Query failed: " + err.Error())
 				break
 			}
 
@@ -254,7 +290,7 @@ func main() {
 			IPs, err := getIPAddresses(nameserver)
 			if err != nil {
 				// 오류 처리
-				fmt.Println("Error for Nameservers : ", nameserver, err)
+				logger.Warn("Error for Nameservers : " + nameserver + err.Error())
 				continue
 			}
 			nameserverIPs = append(nameserverIPs, IPs...)
@@ -262,7 +298,7 @@ func main() {
 			for _, ip := range IPs {
 				countryCode, err := getCountryCode(ip)
 				if err != nil {
-					fmt.Println("Error for Nameserver ip: ", ip, err)
+					logger.Warn("Error for Nameserver ip: " + ip + err.Error())
 					continue
 				}
 				ipType := isIPv4orIPv6(ip)
@@ -274,7 +310,7 @@ func main() {
 		// getIPAddresses 함수를 사용하여 URL에 대한 IP 주소 조회
 		ipAddresses, err := getIPAddresses(domain)
 		if err != nil {
-			fmt.Println("Error for URL's Ip: ", domain, err)
+			logger.Warn("Error for URL's Ip: " + domain + err.Error())
 			return
 		}
 
@@ -282,7 +318,7 @@ func main() {
 		for _, ip := range nameserverIPs {
 			countryCode, err := getCountryCode(ip)
 			if err != nil {
-				fmt.Println("Error for Nameserver's countrycode:", ip, err)
+				logger.Warn("Error for Nameserver's countrycode:" + ip + err.Error())
 				return
 			}
 			fmt.Println(ip, countryCode)
@@ -293,13 +329,15 @@ func main() {
 		for _, ip := range ipAddresses {
 			countryCode, err := getCountryCode(ip)
 			if err != nil {
-				fmt.Println("Error's for URL's ip:", ip, err)
+				logger.Warn("Error's for URL's ip:" + ip + err.Error())
 				return
 			}
 			fmt.Println(ip, countryCode)
 			ioview.InsertWebIPDataIntoTable(db, ioview.WebIpData{SearchID: searchId, IP: ip, CountryCode: countryCode})
 		}
-
 	}
+	elapsedTime := time.Since(startTime).Seconds()
+	elapsedTimeStr := fmt.Sprintf("%.2f sec", elapsedTime)
+	logger.Info("elapsed time for " + strconv.Itoa(len(records)) + " URLs :" + elapsedTimeStr)
 
 }
