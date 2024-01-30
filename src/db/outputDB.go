@@ -1,16 +1,11 @@
-package ioview
+package db
 
 import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
-	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/pkg/errors"
-
-	"github.com/go-sql-driver/mysql"
 )
 
 type DBConfig struct {
@@ -38,31 +33,6 @@ type WebIpData struct {
 type URLSearchData struct {
 	URL    string
 	URLCRC int64
-}
-
-func GetConnector() (*sql.DB, error) {
-	err := godotenv.Load("./Config/dbConfig.env")
-	if err != nil {
-		return nil, errors.Wrap(err, "Error loading DB config file: "+err.Error())
-	}
-	cfg := mysql.Config{
-		User:                 os.Getenv("DB_USER"),
-		Passwd:               os.Getenv("DB_PASSWORD"),
-		Net:                  os.Getenv("DB_NETWORK"),
-		Addr:                 os.Getenv("DB_ADDRESS"),
-		Collation:            "utf8mb4_general_ci",
-		Loc:                  time.UTC,
-		MaxAllowedPacket:     4 << 20.,
-		AllowNativePasswords: true,
-		CheckConnLiveness:    true,
-		DBName:               os.Getenv("DB_NAME"),
-	}
-	connector, err := mysql.NewConnector(&cfg)
-	if err != nil {
-		return nil, errors.Wrap(err, "mysql.NewConnector failed")
-	}
-	db := sql.OpenDB(connector)
-	return db, err
 }
 
 func CreateTablesIfNotExists(db *sql.DB) error {
@@ -105,6 +75,7 @@ func CreateNameServerTableIfNotExists(db *sql.DB) error {
 			ip VARCHAR(30),
 			country_code VARCHAR(2),
 			ip_type INT
+            insert_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`, "tb_name_server")
 
 	// 테이블 생성
@@ -128,6 +99,7 @@ func CreateWEbIpTableIfNotExists(db *sql.DB) error {
 			search_id INT,
 			ip VARCHAR(30),
 			country_code VARCHAR(2)
+            insert_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`, "tb_web_ip")
 
 	// 테이블 생성
@@ -213,8 +185,8 @@ func InsertNameServerDataIntoTable(db *sql.DB, data NameServerData) error {
 	return nil
 }
 
-func GetDBConnect() (*sql.DB, error) {
-	db, err := GetConnector()
+func GetDBConnect(db_name string) (*sql.DB, error) {
+	db, err := GetConnector(db_name)
 	if err != nil {
 		return nil, errors.Wrap(err, "GetConnector failed")
 	}

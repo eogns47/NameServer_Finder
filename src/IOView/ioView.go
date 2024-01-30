@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
+
+	"github.com/eogns47/NameServer_Finder/src/db"
 )
 
 func ReadCsv(target string) ([][]string, error) {
@@ -28,4 +30,20 @@ func ReadCsv(target string) ([][]string, error) {
 
 	// 각 행의 데이터 출력
 	return records, nil
+}
+
+func ReadInputDB(tableName string) ([]db.URLData, error) {
+	inputDB, err := db.GetConnector("inputDB")
+	if err != nil {
+		errors.Wrap(err, "InputDB GetConnector failed")
+		return nil, err
+	}
+	defer inputDB.Close()
+	urlDatas, err := db.ReadDomainTable(inputDB, tableName)
+	if err != nil {
+		errors.Wrap(err, "ReadDomainTable failed")
+		return nil, err
+	}
+
+	return urlDatas, nil
 }

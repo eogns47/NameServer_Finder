@@ -7,19 +7,20 @@ import (
 	"math/rand"
 	"net"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	ioview "github.com/eogns47/NameServer_Finder/src/IOView"
+	mylogger "github.com/eogns47/NameServer_Finder/src/Logger"
+	db "github.com/eogns47/NameServer_Finder/src/db"
 	"github.com/miekg/dns"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
+
+var logger = mylogger.SetLogger()
 
 const (
 	// DefaultTimeout is default timeout many operation in this program will
@@ -180,80 +181,84 @@ func isIPv4orIPv6(ipStr string) int {
 	}
 }
 
-func fileLogger(logFolder string) *zap.Logger {
-	// Check if the log folder exists, create it if not
-	if _, err := os.Stat(logFolder); os.IsNotExist(err) {
-		err := os.Mkdir(logFolder, 0755)
-		if err != nil {
-			panic(err)
-		}
+func csvFinder(records [][]string) ([]db.URLData, error) {
+	outputDB, err := db.GetDBConnect("outputDB")
+	if err != nil {
+		logger.Warn("🚨Error with DB Connect:" + err.Error())
+		return nil, err
 	}
-	filename := filepath.Join(logFolder, "log.log")
+	defer outputDB.Close()
 
-	config := zap.NewProductionEncoderConfig()
-	config.EncodeTime = zapcore.ISO8601TimeEncoder
-	fileEncoder := zapcore.NewJSONEncoder(config)
-	consoleEncoder := zapcore.NewConsoleEncoder(config)
-	logFile, _ := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	writer := zapcore.AddSync(logFile)
-	defaultLogLevel := zapcore.DebugLevel
-	core := zapcore.NewTee(
-		zapcore.NewCore(fileEncoder, writer, defaultLogLevel),
-		zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), defaultLogLevel),
-	)
+	urlDatas := []db.URLData{}
 
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
-
-	return logger
+	for _, record := range records {
+		domain := dns.Fqdn(record[0])
+		urlcrc, err := strconv.Atoi(record[1])
+		if err != nil {
+			logger.Info("URL " + domain + " Dont have CRC")
+			continue
+		}
+		searchId, err := db.InsertURLSearchDataIntoTable(outputDB, db.URLSearchData{URL: domain, URLCRC: int64(urlcrc)})
+		if err != nil {
+			logger.Warn("🚨Error:" + err.Error())
+			return nil, err
+		}
+		urlDatas = append(urlDatas, db.URLData{URLId: searchId, URL: domain, URLCRC: int64(urlcrc)})
+	}
+	return urlDatas, nil
 }
 
 func main() {
 	// initialize the rotator
-	currentDir, err := os.Getwd()
-	logFile := filepath.Join(currentDir, "/logs")
-
-	logger := fileLogger(logFile)
 
 	if len(os.Args) != 2 {
-		logger.Warn("🤔" + os.Args[0] + "ZONE")
+		fmt.Println("🤔Usage1: " + os.Args[0] + " {csvfilename}.csv\n🤔Usage2: " + os.Args[0] + " {tablename}")
 		return
 	}
-
 	target := os.Args[1]
-	records, err := ioview.ReadCsv(target)
-
-	if err != nil {
-		logger.Warn("🚨Error with Input csv:" + err.Error())
-	}
 
 	conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 	if err != nil || conf == nil {
 		logger.Warn("🚨Cannot initialize the local resolver: %s\n" + err.Error())
+		return
 	}
 
 	resolver := NewZoneNsResolver()
-	db, err := ioview.GetDBConnect()
-	if err != nil {
-		logger.Warn("🚨Error with DB Connect:" + err.Error())
-	}
 
-	startTime := time.Now()
-	logger.Info("🚀Start find NS of " + target)
-	for _, record := range records {
-		urlcrc, err := strconv.Atoi(record[1])
+	UrlDatas := []db.URLData{}
+
+	if !strings.HasSuffix(target, ".csv") {
+		UrlDatas, err = ioview.ReadInputDB(target)
 		if err != nil {
-			logger.Info("URL " + record[0] + " Dont have CRC")
-			continue
+			logger.Warn("🚨Error with Input DB:" + err.Error())
+			return
 		}
-		searchId, err := ioview.InsertURLSearchDataIntoTable(db, ioview.URLSearchData{URL: record[0], URLCRC: int64(urlcrc)})
+	} else {
+		records, err := ioview.ReadCsv(target)
 		if err != nil {
-			logger.Warn("🚨Error:" + err.Error())
+			logger.Warn("🚨Error with Input csv:" + err.Error())
 			return
 		}
 
-		fmt.Println("-----------------------------------------------------------------------------------------------------------------")
+		UrlDatas, err = csvFinder(records)
+	}
 
-		domain := dns.Fqdn(record[0])
+	startTime := time.Now()
+
+	outputDB, err := db.GetDBConnect("outputDB")
+	if err != nil {
+		logger.Warn("🚨Error with DB Connect:" + err.Error())
+		return
+	}
+	defer outputDB.Close()
+
+	logger.Info("🚀Start find NS of " + target)
+	for _, url := range UrlDatas {
+		domain := url.URL
+		searchId := url.URLId
+
+		fmt.Println("------------------------------------------------------------------------------------------------------------")
+
 		domain = removeHTTPPrefix(domain)
 
 		var ns []string
@@ -302,7 +307,7 @@ func main() {
 					continue
 				}
 				ipType := isIPv4orIPv6(ip)
-				ioview.InsertNameServerDataIntoTable(db, ioview.NameServerData{SearchID: searchId, NameServer: nameserver, IP: ip, CountryCode: countryCode, IPType: ipType})
+				db.InsertNameServerDataIntoTable(outputDB, db.NameServerData{SearchID: searchId, NameServer: nameserver, IP: ip, CountryCode: countryCode, IPType: ipType})
 			}
 
 		}
@@ -333,11 +338,11 @@ func main() {
 				return
 			}
 			fmt.Println(ip, countryCode)
-			ioview.InsertWebIPDataIntoTable(db, ioview.WebIpData{SearchID: searchId, IP: ip, CountryCode: countryCode})
+			db.InsertWebIPDataIntoTable(outputDB, db.WebIpData{SearchID: searchId, IP: ip, CountryCode: countryCode})
 		}
 	}
 	elapsedTime := time.Since(startTime).Seconds()
 	elapsedTimeStr := fmt.Sprintf("%.2f sec", elapsedTime)
-	logger.Info("🚀elapsed time for " + strconv.Itoa(len(records)) + " URLs :" + elapsedTimeStr)
+	logger.Info("🎉elapsed time for " + strconv.Itoa(len(UrlDatas)) + " URLs :" + elapsedTimeStr)
 
 }
