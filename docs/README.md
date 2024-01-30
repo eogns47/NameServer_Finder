@@ -93,7 +93,7 @@ Logging functionality is being added.
 
 # Database ERD
 
-![asd](images/image.png)
+![asd](../images/image.png)
 <br>
 
 # Why?
