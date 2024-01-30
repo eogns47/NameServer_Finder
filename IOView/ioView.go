@@ -9,7 +9,7 @@ import (
 
 func ReadCsv(target string) ([][]string, error) {
 	// CSV 파일 열기
-	file, err := os.Open(target)
+	file, err := os.Open("constants/" + target)
 	if err != nil {
 		return nil, errors.Wrap(err, "Open failed")
 	}
