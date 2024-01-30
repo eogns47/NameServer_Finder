@@ -33,7 +33,7 @@ https://download.mywebface.com,855349189,35.201.91.40
 https://m14.xozejjt.com,2315816021,157.56.160.177
 ```
 
-You should make file `dbConfig.env` under `Config` directory
+You should make file `outputDBConfig.env` under `Config` directory
 
 ```
 ex)
