@@ -1,0 +1,6 @@
+*.env
+main
+*.csv
+NameServer_Finder
+/logs/*
+```
