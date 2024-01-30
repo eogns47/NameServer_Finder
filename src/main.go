@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	ioview "github.com/eogns47/NameServer_Finder/IOView"
+	ioview "github.com/eogns47/NameServer_Finder/src/IOView"
 	"github.com/miekg/dns"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pkg/errors"

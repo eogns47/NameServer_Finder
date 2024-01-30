@@ -3,5 +3,6 @@ main
 *.csv
 NameServer_Finder
 Config/*.env
-log/*
+logs/*.log
+/logs/
 ```
